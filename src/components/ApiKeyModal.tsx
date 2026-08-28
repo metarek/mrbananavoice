@@ -36,10 +36,12 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [pasteNotice, setPasteNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setInputKey(apiKey);
     setTestResult(null);
+    setPasteNotice(null);
   }, [apiKey, isOpen]);
 
   if (!isOpen) return null;
@@ -70,22 +72,36 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   };
 
   const handlePasteFromClipboard = async () => {
+    setPasteNotice(null);
     try {
-      const text = await navigator.clipboard.readText();
-      if (text) {
-        const cleanText = text.trim().replace(/^["']|["']$/g, "");
-        setInputKey(cleanText);
-        setPastedSuccess(true);
-        setTimeout(() => setPastedSuccess(false), 2000);
+      if (navigator.clipboard && typeof navigator.clipboard.readText === "function") {
+        const text = await navigator.clipboard.readText();
+        if (text && text.trim().length > 0) {
+          const cleanText = text.trim().replace(/^["']|["']$/g, "");
+          setInputKey(cleanText);
+          setPastedSuccess(true);
+          setPasteNotice("ক্লিপবোর্ড থেকে Key সফলভাবে পেস্ট হয়েছে! ✅");
+          setTimeout(() => {
+            setPastedSuccess(false);
+            setPasteNotice(null);
+          }, 3000);
+          return;
+        }
       }
-    } catch (err) {
-      console.warn("Clipboard read error, user can paste manually", err);
-      const input = document.getElementById("api-key-input-field") as HTMLInputElement;
-      if (input) {
-        input.focus();
-        input.select();
-      }
+    } catch (err: any) {
+      console.warn("Clipboard read error / iframe restricted:", err);
     }
+
+    // Fallback: Focus and select the input box so the user can easily paste (Ctrl+V or Long press)
+    const input = document.getElementById("api-key-input-field") as HTMLInputElement;
+    if (input) {
+      input.focus();
+      try {
+        document.execCommand("paste");
+      } catch (_) {}
+    }
+    setPasteNotice("বক্সে ক্লিক করে দীর্ঘক্ষণ চেপে ধরে 'Paste' অথবা কিবোর্ডে Ctrl+V চাপুন।");
+    setTimeout(() => setPasteNotice(null), 5000);
   };
 
   const handleCopyCurrentKey = () => {
@@ -117,28 +133,25 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
     setTestResult(null);
 
     try {
-      const isBearer = keyToTest.startsWith("AQ.") || keyToTest.startsWith("AQ_") || keyToTest.startsWith("ya29.");
-      const headers: Record<string, string> = {};
-      let url = "https://generativelanguage.googleapis.com/v1beta/models";
-
-      if (isBearer) {
-        headers["Authorization"] = `Bearer ${keyToTest}`;
-      } else {
-        url += `?key=${encodeURIComponent(keyToTest)}`;
-      }
-
-      const response = await fetch(url, { headers });
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(keyToTest)}`,
+        {
+          headers: {
+            "x-goog-api-key": keyToTest,
+          },
+        }
+      );
       if (response.ok) {
         setTestResult({
           success: true,
-          message: "অভিনন্দন! আপনার Key ১০০% সক্রিয় ও প্রস্তুত আছে।",
+          message: "অভিনন্দন! আপনার নতুন Google AI Studio Key (AQ/AIzaSy) ১০০% সক্রিয় ও প্রস্তুত!",
         });
       } else {
         const errData = await response.json().catch(() => ({}));
         setTestResult({
           success: false,
           message:
-            errData?.error?.message || "Key টি যাচাই করা যায়নি। নতুন ফ্রি AI Studio কী পেতে aistudio.google.com/app/apikey ভিজিট করুন।",
+            errData?.error?.message || "Key টি যাচাই করা যায়নি। দয়া করে নিশ্চিত করুন কী-টি সঠিক আছে কিনা।",
         });
       }
     } catch (e: any) {
@@ -281,6 +294,14 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
               <span>কী টেস্ট করুন</span>
             </button>
           </div>
+
+          {/* Paste notice feedback */}
+          {pasteNotice && (
+            <div className="p-2 rounded-lg bg-yellow-400/20 border border-yellow-400/40 text-yellow-200 text-xs flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-yellow-400 shrink-0" />
+              <span>{pasteNotice}</span>
+            </div>
+          )}
 
           {/* Valid Key Indicator */}
           {(isValidGeminiFormat || isAQToken) && (

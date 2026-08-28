@@ -54,13 +54,11 @@ function getAIClient(apiKey?: string): GoogleGenAI {
     keyToUse = keys[0] || process.env.GEMINI_API_KEY || "";
   }
   const cleanKey = (keyToUse || "").trim().replace(/^["']|["']$/g, "");
-  const isBearer = cleanKey.startsWith("AQ.") || cleanKey.startsWith("AQ_") || cleanKey.startsWith("ya29.");
 
   return new GoogleGenAI({
     apiKey: cleanKey,
     httpOptions: {
       headers: {
-        ...(isBearer ? { Authorization: `Bearer ${cleanKey}` } : {}),
         'User-Agent': 'aistudio-build',
       },
     },

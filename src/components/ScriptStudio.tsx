@@ -7,6 +7,7 @@ import {
   Check,
   RefreshCw,
   Copy,
+  ClipboardPaste,
   Languages,
   FileText,
   Radio,
@@ -50,6 +51,8 @@ export function ScriptStudio({
   const [enhancingAction, setEnhancingAction] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [genderFilter, setGenderFilter] = useState<"all" | "female" | "male">("all");
+  const [pastedScriptSuccess, setPastedScriptSuccess] = useState(false);
+  const [pasteScriptNotice, setPasteScriptNotice] = useState<string | null>(null);
 
   // Filter voices based on gender selection
   const filteredVoices = VOICES.filter((voice) => {
@@ -107,6 +110,37 @@ export function ScriptStudio({
       textarea.focus();
       textarea.setSelectionRange(insertPos + emoji.length + 1, insertPos + emoji.length + 1);
     }, 50);
+  };
+
+  const handlePasteScript = async () => {
+    setPasteScriptNotice(null);
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.readText === "function") {
+        const clipboardText = await navigator.clipboard.readText();
+        if (clipboardText && clipboardText.trim().length > 0) {
+          setText(clipboardText.trim());
+          setPastedScriptSuccess(true);
+          setPasteScriptNotice("স্ক্রিপ্ট সফলভাবে পেস্ট হয়েছে! ✨");
+          setTimeout(() => {
+            setPastedScriptSuccess(false);
+            setPasteScriptNotice(null);
+          }, 3000);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Clipboard read error in script editor:", err);
+    }
+
+    // Fallback: Focus the textarea and select
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+      try {
+        document.execCommand("paste");
+      } catch (_) {}
+    }
+    setPasteScriptNotice("টেক্সট বক্সে ক্লিক করে Paste বা Ctrl+V চাপুন।");
+    setTimeout(() => setPasteScriptNotice(null), 4000);
   };
 
   const handleApplyPreset = (preset: ScriptPreset) => {
@@ -267,8 +301,29 @@ export function ScriptStudio({
             </p>
           </div>
 
-          {/* Quick Presets */}
+          {/* Quick Presets and Paste Button */}
           <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+            <button
+              id="paste-script-btn"
+              onClick={handlePasteScript}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-yellow-400/20 text-yellow-300 border border-yellow-400/40 hover:bg-yellow-400/30 cursor-pointer shadow-sm"
+              title="ক্লিপবোর্ড থেকে আপনার পুরো স্ক্রিপ্ট এক ক্লিকে পেস্ট করুন"
+            >
+              <ClipboardPaste className="w-3.5 h-3.5" />
+              <span>{pastedScriptSuccess ? "পেস্ট হয়েছে! ✨" : "📋 পেস্ট করুন"}</span>
+            </button>
+
+            {text.trim() && (
+              <button
+                id="clear-script-btn"
+                onClick={() => setText("")}
+                className="px-2 py-1 rounded-lg text-xs font-medium text-zinc-400 hover:text-red-300 hover:bg-zinc-800 transition cursor-pointer"
+                title="টেক্সট মুছে ফেলুন"
+              >
+                মুছুন
+              </button>
+            )}
+
             {SCRIPT_PRESETS.map((preset) => {
               const isSelected = text.trim() === preset.text.trim();
               return (
@@ -288,6 +343,14 @@ export function ScriptStudio({
             })}
           </div>
         </div>
+
+        {/* Paste Script Notice */}
+        {pasteScriptNotice && (
+          <div className="p-2 rounded-lg bg-yellow-400/20 border border-yellow-400/30 text-yellow-200 text-xs flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+            <span>{pasteScriptNotice}</span>
+          </div>
+        )}
 
         {/* Interactive Emoji Acting Bar */}
         <EmojiBar
