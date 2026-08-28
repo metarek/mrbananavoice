@@ -70,6 +70,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
               success: true,
               message: data.message || "সবুজ বাতি: Key ১০০% সঠিক ও প্রস্তুত! ভয়েস নির্দ্বিধায় তৈরি হবে।",
             });
+            onSaveApiKey(keyToTest, false);
           } else {
             setTestResult({
               success: false,
@@ -191,7 +192,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
     setTestResult(null);
 
     try {
-      // Test via server-side /api/validate-key which tests actual Gemini Flash TTS Audio generation
+      // Test via server-side /api/validate-key which directly invokes Gemini 3.1 Flash TTS
       const response = await fetch("/api/validate-key", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -205,36 +206,25 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
             success: true,
             message: data.message || "সবুজ বাতি: Key ১০০% সঠিক ও প্রস্তুত! ভয়েস নির্দ্বিধায় তৈরি হবে।",
           });
+          // Auto-save verified key to storage seamlessly
+          onSaveApiKey(keyToTest, false);
         } else {
           setTestResult({
             success: false,
-            message: data.message || "লাল বাতি: এই Key টি সঠিক নয় বা মেয়াদোত্তীর্ণ। নতুন কী নিন।",
+            message: data.message || "লাল বাতি: এই Key টি দিয়ে ভয়েস তৈরি সম্ভব নয় বা বাতিল হয়েছে। নতুন কী নিন।",
           });
         }
       } else {
-        // Fallback check
-        const directResp = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(keyToTest)}`,
-          {
-            headers: { "x-goog-api-key": keyToTest },
-          }
-        );
-        if (directResp.ok) {
-          setTestResult({
-            success: true,
-            message: "সবুজ বাতি: Google AI Studio Key যাচাই সম্পন্ন হয়েছে।",
-          });
-        } else {
-          setTestResult({
-            success: false,
-            message: "লাল বাতি: Key টি যাচাই করা যায়নি। দয়া করে aistudio.google.com/app/apikey থেকে ফ্রি কী নিন।",
-          });
-        }
+        const errData = await response.json().catch(() => ({}));
+        setTestResult({
+          success: false,
+          message: errData?.message || "লাল বাতি: Key যাচাই করতে সমস্যা হয়েছে। দয়া করে সঠিক কী দিন।",
+        });
       }
     } catch (e: any) {
       setTestResult({
-        success: true,
-        message: "সবুজ বাতি: Key ফরম্যাট গৃহীত হয়েছে। সংরক্ষণ করে ভয়েস তৈরি করুন।",
+        success: false,
+        message: "লাল বাতি: সার্ভার সংযোগে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।",
       });
     } finally {
       setIsTesting(false);
