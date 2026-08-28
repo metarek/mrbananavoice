@@ -47,6 +47,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   const trimmedKey = inputKey.trim().replace(/^["']|["']$/g, "");
   const isAQToken = trimmedKey.startsWith("AQ.") || trimmedKey.startsWith("AQ_") || (trimmedKey.startsWith("AQ") && trimmedKey.length > 30);
   const isValidGeminiFormat = trimmedKey.startsWith("AIzaSy");
+  const isValidAnyFormat = isValidGeminiFormat || isAQToken || trimmedKey.length >= 20;
 
   const handleSaveAndGenerate = () => {
     const cleanKey = inputKey.trim().replace(/^["']|["']$/g, "");
@@ -108,7 +109,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   const handleTestKey = async () => {
     const keyToTest = inputKey.trim().replace(/^["']|["']$/g, "");
     if (!keyToTest) {
-      setTestResult({ success: false, message: "অনুগ্রহ করে আগে একটি API Key পেস্ট করুন।" });
+      setTestResult({ success: false, message: "অনুগ্রহ করে আগে একটি Key পেস্ট করুন।" });
       return;
     }
 
@@ -116,26 +117,34 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
     setTestResult(null);
 
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(keyToTest)}`
-      );
+      const isBearer = keyToTest.startsWith("AQ.") || keyToTest.startsWith("AQ_") || keyToTest.startsWith("ya29.");
+      const headers: Record<string, string> = {};
+      let url = "https://generativelanguage.googleapis.com/v1beta/models";
+
+      if (isBearer) {
+        headers["Authorization"] = `Bearer ${keyToTest}`;
+      } else {
+        url += `?key=${encodeURIComponent(keyToTest)}`;
+      }
+
+      const response = await fetch(url, { headers });
       if (response.ok) {
         setTestResult({
           success: true,
-          message: "অভিনন্দন! আপনার API Key ১০০% সঠিক ও সক্রিয় আছে।",
+          message: "অভিনন্দন! আপনার Key ১০০% সক্রিয় ও প্রস্তুত আছে।",
         });
       } else {
         const errData = await response.json().catch(() => ({}));
         setTestResult({
           success: false,
           message:
-            errData?.error?.message || "API Key টি সঠিক নয় বা মেয়াদ উত্তীর্ণ হয়েছে। দয়া করে নতুন কী নিন।",
+            errData?.error?.message || "Key টি যাচাই করা যায়নি। নতুন ফ্রি AI Studio কী পেতে aistudio.google.com/app/apikey ভিজিট করুন।",
         });
       }
     } catch (e: any) {
       setTestResult({
         success: true,
-        message: "API Key ফরম্যাট ঠিক আছে। সংরক্ষণ করে ভয়েস তৈরি করুন।",
+        message: "Key ফরম্যাট গৃহীত হয়েছে। সংরক্ষণ করে ভয়েস তৈরি করুন।",
       });
     } finally {
       setIsTesting(false);
@@ -273,24 +282,11 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
             </button>
           </div>
 
-          {/* AQ Format Warning */}
-          {isAQToken && (
-            <div className="p-2.5 rounded-xl text-xs bg-amber-950/70 border border-amber-500/50 text-amber-200 space-y-1">
-              <div className="flex items-center gap-1.5 font-bold text-amber-300">
-                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                <span>এটি একটি Google Cloud / AQ টোকেন</span>
-              </div>
-              <p className="text-[11px] leading-relaxed">
-                Gemini TTS ভয়েসের জন্য <strong>AIzaSy...</strong> দিয়ে শুরু হওয়া ফ্রি API Key প্রয়োজন। অনুগ্রহ করে নিচের লিংকে ক্লিক করে ১ ক্লিকে আসল Key নিন।
-              </p>
-            </div>
-          )}
-
           {/* Valid Key Indicator */}
-          {isValidGeminiFormat && (
+          {(isValidGeminiFormat || isAQToken) && (
             <div className="p-2 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-[11px] flex items-center gap-1.5 font-semibold">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>সঠিক Gemini API Key ফরম্যাট শনাক্ত হয়েছে!</span>
+              <span>{isValidGeminiFormat ? "সঠিক Gemini API Key (AIzaSy) শনাক্ত হয়েছে!" : "সঠিক Google Access Key (AQ) শনাক্ত হয়েছে!"}</span>
             </div>
           )}
 

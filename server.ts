@@ -17,20 +17,14 @@ let globalKeyRotationIndex = 0;
 
 function getAllAvailableKeys(userKey?: string): string[] {
   const keys: string[] = [];
-  
-  // 1. If user provided custom key, prioritize it FIRST
-  if (userKey && typeof userKey === "string") {
-    const userKeys = userKey.split(/[,\n]/).map(k => k.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
-    keys.push(...userKeys);
-  }
 
-  // 2. Server environment keys as fallback
+  // 1. Primary: Server environment key injected by platform
   const envSources = [
     process.env.GEMINI_API_KEY,
-    process.env.VITE_GEMINI_API_KEY,
-    process.env.AI_STUDIO_KEY,
-    process.env.GOOGLE_API_KEY,
     process.env.API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.AI_STUDIO_KEY,
+    process.env.VITE_GEMINI_API_KEY,
   ];
   for (const envVal of envSources) {
     if (envVal && typeof envVal === "string") {
@@ -39,10 +33,18 @@ function getAllAvailableKeys(userKey?: string): string[] {
     }
   }
 
+  // 2. User custom key from settings if provided
+  if (userKey && typeof userKey === "string") {
+    const userKeys = userKey.split(/[,\n]/).map(k => k.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+    keys.push(...userKeys);
+  }
+
+  // 3. Built-in Key Pool
   if (DEFAULT_KEY_POOL && Array.isArray(DEFAULT_KEY_POOL)) {
     keys.push(...DEFAULT_KEY_POOL);
   }
-  return Array.from(new Set(keys)).filter(k => k.length > 10);
+
+  return Array.from(new Set(keys)).filter(k => typeof k === "string" && k.trim().length > 10);
 }
 
 function getAIClient(apiKey?: string): GoogleGenAI {
@@ -51,8 +53,17 @@ function getAIClient(apiKey?: string): GoogleGenAI {
     const keys = getAllAvailableKeys();
     keyToUse = keys[0] || process.env.GEMINI_API_KEY || "";
   }
+  const cleanKey = (keyToUse || "").trim().replace(/^["']|["']$/g, "");
+  const isBearer = cleanKey.startsWith("AQ.") || cleanKey.startsWith("AQ_") || cleanKey.startsWith("ya29.");
+
   return new GoogleGenAI({
-    apiKey: (keyToUse || "").trim().replace(/^["']|["']$/g, ""),
+    apiKey: cleanKey,
+    httpOptions: {
+      headers: {
+        ...(isBearer ? { Authorization: `Bearer ${cleanKey}` } : {}),
+        'User-Agent': 'aistudio-build',
+      },
+    },
   });
 }
 
@@ -487,7 +498,7 @@ app.post("/api/tts", async (req, res) => {
         lastErrorMsg.includes("API_KEY_INVALID")
       ) {
         return res.status(400).json({
-          error: "API Key টি সক্রিয় নয় বা Google দ্বারা বাতিল/Leaked হয়েছে। অনুগ্রহ করে উপরে 'Vercel / API Key' বাটনে ক্লিক করে aistudio.google.com/app/apikey থেকে আপনার নিজস্ব ফ্রি Gemini API Key দিন।",
+          error: "API Key-টি সক্রিয় নয় বা Google দ্বারা বাতিল হয়েছে। অনুগ্রহ করে উপরে '🔑 API Key' বাটনে ক্লিক করে aistudio.google.com/app/apikey থেকে আপনার নিজস্ব ফ্রি Gemini API Key বসিয়ে দিন।",
           needsApiKey: true,
         });
       }

@@ -122,7 +122,7 @@ export default function App() {
 
     const keyString =
       typeof overrideKey === "string" ? overrideKey : typeof customApiKey === "string" ? customApiKey : "";
-    const activeKey = keyString.trim();
+    const activeKey = keyString.trim().replace(/^["']|["']$/g, "");
 
     setIsLoadingAudio(true);
     setErrorMessage(null);
@@ -132,13 +132,13 @@ export default function App() {
     let chunksCount = 1;
 
     try {
-      // Step 1: Request Speech from Server TTS Engine with 25s timeout
+      // Step 1: Request Speech from Server TTS Engine
       let serverResponseWorked = false;
       let serverErrorMessage = "";
 
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 25000);
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
 
         const response = await fetch("/api/tts", {
           method: "POST",
@@ -148,7 +148,7 @@ export default function App() {
             text: text.trim(),
             voiceName: selectedVoice,
             language: language,
-            apiKey: activeKey ? activeKey : undefined,
+            apiKey: activeKey || undefined,
           }),
         });
 
@@ -171,35 +171,12 @@ export default function App() {
         }
       } catch (serverErr: any) {
         console.warn("Server TTS connection / timeout error:", serverErr);
-        if (serverErr?.name === "AbortError") {
-          serverErrorMessage = "সার্ভার থেকে রেসপন্স পেতে দেরি হচ্ছে। অনুগ্রহ করে পুনরায় চেষ্টা করুন।";
-        } else {
-          serverErrorMessage = "সার্ভারের সাথে সংযোগ স্থাপন করা সম্ভব হয়নি।";
-        }
-      }
-
-      // Step 2: If server TTS didn't succeed, try direct client generation (using custom key, localStorage, or VITE_GEMINI_API_KEY)
-      if (!serverResponseWorked) {
-        try {
-          audioBase64 = await generateSpeechDirectly(
-            text.trim(),
-            selectedVoice,
-            language,
-            activeKey || undefined
-          );
-          if (audioBase64) {
-            serverResponseWorked = true;
-          }
-        } catch (geminiErr: any) {
-          console.warn("Direct Gemini Studio TTS error:", geminiErr);
-          serverErrorMessage = geminiErr?.message || serverErrorMessage;
-        }
+        serverErrorMessage = serverErr?.message || "সার্ভার সংযোগে সমস্যা হয়েছে।";
       }
 
       if (!audioBase64) {
         throw new Error(
-          serverErrorMessage ||
-          "ভয়েস তৈরি করার জন্য একটি সক্রিয় Gemini API Key প্রয়োজন।"
+          serverErrorMessage || "ভয়েস তৈরি করার সময় সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।"
         );
       }
 
@@ -213,21 +190,10 @@ export default function App() {
         selectedVoice?.toLowerCase()?.includes("baby") ||
         selectedVoice?.toLowerCase()?.includes("বাচ্চা");
 
-      // Transform vocal tract & acoustic formant frequency
-      // - Anya: ~4-6 year old cute anime child (pitch 1.25x)
-      // - Kore / Teen girl: authentic 12-15 year old youthful sweet bright teenage girl (pitch 1.13x)
-      const isKoreTeen =
-        !isAnyaChild &&
-        (selectedVoice === "Kore" ||
-          selectedVoice?.toLowerCase()?.includes("kore") ||
-          selectedVoice?.toLowerCase()?.includes("মেয়ে") ||
-          selectedVoice?.toLowerCase()?.includes("কিশোরী"));
-
+      // Transform vocal tract & acoustic formant frequency only if child voice selected
       let processedPcm = pcmBytes;
       if (isAnyaChild) {
         processedPcm = applyChildVoicePitch(pcmBytes, 1.25);
-      } else if (isKoreTeen) {
-        processedPcm = applyChildVoicePitch(pcmBytes, 1.13); // High-fidelity lift into 12-15 year old teen girl frequency
       }
 
       const wavBlob = pcmToWavBlob(processedPcm, 24000, 1);
@@ -265,7 +231,7 @@ export default function App() {
         colors: ["#facc15", "#f59e0b", "#10b981"],
       });
     } catch (err: any) {
-      console.error("TTS Error:", err);
+      console.error("TTS generation error:", err);
       const msg = err.message || "";
       if (
         err?.isQuotaExceeded ||
@@ -278,17 +244,7 @@ export default function App() {
         const retrySec = err?.retryAfter || 25;
         setQuotaCountdown(retrySec);
         setErrorMessage(
-          `গুগল এপিআই-এর প্রতি মিনিটের ফ্রি কোটা সাময়িকভাবে শেষ হয়েছে (429 Quota Exceeded)। অনুগ্রহ করে ${retrySec} সেকেন্ড অপেক্ষা করুন অথবা উপরে '🔑 API Key' বাটনে আপনার নিজস্ব আরেকটি ফ্রি Key দিন।`
-        );
-      } else if (
-        msg.includes("leaked") ||
-        msg.includes("API key not valid") ||
-        msg.includes("API_KEY_INVALID") ||
-        msg.includes("PERMISSION_DENIED") ||
-        msg.includes("INVALID_ARGUMENT")
-      ) {
-        setErrorMessage(
-          "আপনার API Key টি মেয়াদোত্তীর্ণ বা গুগল কর্তৃক বাতিল হয়েছে। অনুগ্রহ করে aistudio.google.com/app/apikey থেকে ১ ক্লিকে একদম ফ্রি নতুন Key নিয়ে উপরে সেভ করুন।"
+          `গুগল এপিআই-এর প্রতি মিনিটের ফ্রি কোটা সাময়িকভাবে শেষ হয়েছে (429 Quota Exceeded)। অনুগ্রহ করে ${retrySec} সেকেন্ড অপেক্ষা করুন।`
         );
       } else {
         setErrorMessage(msg || "ভয়েস তৈরি করার সময় সমস্যা হয়েছে। অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।");
