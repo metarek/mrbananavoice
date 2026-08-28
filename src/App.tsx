@@ -244,8 +244,18 @@ export default function App() {
         const retrySec = err?.retryAfter || 25;
         setQuotaCountdown(retrySec);
         setErrorMessage(
-          `গুগল এপিআই-এর প্রতি মিনিটের ফ্রি কোটা সাময়িকভাবে শেষ হয়েছে (429 Quota Exceeded)। অনুগ্রহ করে ${retrySec} সেকেন্ড অপেক্ষা করুন।`
+          `গুগল এপিআই-এর প্রতি মিনিটের ফ্রি কোটা সাময়িকভাবে শেষ হয়েছে (429 Quota Exceeded)। অনুগ্রহ করে ${retrySec} সেকেন্ড অপেক্ষা করুন বা নতুন Key ব্যবহার করুন।`
         );
+      } else if (
+        msg.includes("কোনো সক্রিয় Gemini API Key পাওয়া যায়নি") ||
+        msg.includes("API key not valid") ||
+        msg.includes("API_KEY_INVALID") ||
+        msg.includes("400")
+      ) {
+        setErrorMessage(
+          "কোনো সক্রিয় API Key পাওয়া যায়নি। নিচের '🔑 ফ্রি Key দিন' বাটনে ক্লিক করে aistudio.google.com/app/apikey থেকে ফ্রি কী পেস্ট করুন।"
+        );
+        setIsApiKeyModalOpen(true);
       } else {
         setErrorMessage(msg || "ভয়েস তৈরি করার সময় সমস্যা হয়েছে। অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।");
       }

@@ -38,11 +38,69 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [pasteNotice, setPasteNotice] = useState<string | null>(null);
 
+  // Auto-validate key when input changes or modal opens
   useEffect(() => {
     setInputKey(apiKey);
-    setTestResult(null);
     setPasteNotice(null);
   }, [apiKey, isOpen]);
+
+  // Debounced auto-test whenever inputKey changes
+  useEffect(() => {
+    const keyToTest = inputKey.trim().replace(/^["']|["']$/g, "");
+    if (!keyToTest || keyToTest.length < 10) {
+      setTestResult(null);
+      return;
+    }
+
+    let isCancelled = false;
+    const timer = setTimeout(async () => {
+      setIsTesting(true);
+      try {
+        const response = await fetch("/api/validate-key", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ apiKey: keyToTest }),
+        });
+        if (isCancelled) return;
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.valid) {
+            setTestResult({
+              success: true,
+              message: data.message || "সবুজ বাতি: Key ১০০% সঠিক ও প্রস্তুত! ভয়েস নির্দ্বিধায় তৈরি হবে।",
+            });
+          } else {
+            setTestResult({
+              success: false,
+              message: data.message || "লাল বাতি: এই Key টি সঠিক নয় বা মেয়াদোত্তীর্ণ। নতুন কী নিন।",
+            });
+          }
+        } else {
+          setTestResult({
+            success: false,
+            message: "লাল বাতি: Key যাচাই করতে সমস্যা হয়েছে।",
+          });
+        }
+      } catch (err: any) {
+        if (!isCancelled) {
+          setTestResult({
+            success: false,
+            message: "লাল বাতি: সার্ভার সংযোগে সমস্যা।",
+          });
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsTesting(false);
+        }
+      }
+    }, 600);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
+  }, [inputKey]);
 
   if (!isOpen) return null;
 
@@ -133,31 +191,50 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
     setTestResult(null);
 
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(keyToTest)}`,
-        {
-          headers: {
-            "x-goog-api-key": keyToTest,
-          },
-        }
-      );
+      // Test via server-side /api/validate-key which tests actual Gemini Flash TTS Audio generation
+      const response = await fetch("/api/validate-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: keyToTest }),
+      });
+
       if (response.ok) {
-        setTestResult({
-          success: true,
-          message: "অভিনন্দন! আপনার নতুন Google AI Studio Key (AQ/AIzaSy) ১০০% সক্রিয় ও প্রস্তুত!",
-        });
+        const data = await response.json();
+        if (data.valid) {
+          setTestResult({
+            success: true,
+            message: data.message || "সবুজ বাতি: Key ১০০% সঠিক ও প্রস্তুত! ভয়েস নির্দ্বিধায় তৈরি হবে।",
+          });
+        } else {
+          setTestResult({
+            success: false,
+            message: data.message || "লাল বাতি: এই Key টি সঠিক নয় বা মেয়াদোত্তীর্ণ। নতুন কী নিন।",
+          });
+        }
       } else {
-        const errData = await response.json().catch(() => ({}));
-        setTestResult({
-          success: false,
-          message:
-            errData?.error?.message || "Key টি যাচাই করা যায়নি। দয়া করে নিশ্চিত করুন কী-টি সঠিক আছে কিনা।",
-        });
+        // Fallback check
+        const directResp = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(keyToTest)}`,
+          {
+            headers: { "x-goog-api-key": keyToTest },
+          }
+        );
+        if (directResp.ok) {
+          setTestResult({
+            success: true,
+            message: "সবুজ বাতি: Google AI Studio Key যাচাই সম্পন্ন হয়েছে।",
+          });
+        } else {
+          setTestResult({
+            success: false,
+            message: "লাল বাতি: Key টি যাচাই করা যায়নি। দয়া করে aistudio.google.com/app/apikey থেকে ফ্রি কী নিন।",
+          });
+        }
       }
     } catch (e: any) {
       setTestResult({
         success: true,
-        message: "Key ফরম্যাট গৃহীত হয়েছে। সংরক্ষণ করে ভয়েস তৈরি করুন।",
+        message: "সবুজ বাতি: Key ফরম্যাট গৃহীত হয়েছে। সংরক্ষণ করে ভয়েস তৈরি করুন।",
       });
     } finally {
       setIsTesting(false);
@@ -303,36 +380,92 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
             </div>
           )}
 
-          {/* Valid Key Indicator */}
-          {(isValidGeminiFormat || isAQToken) && (
-            <div className="p-2 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-[11px] flex items-center gap-1.5 font-semibold">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>{isValidGeminiFormat ? "সঠিক Gemini API Key (AIzaSy) শনাক্ত হয়েছে!" : "সঠিক Google Access Key (AQ) শনাক্ত হয়েছে!"}</span>
+          {/* Key Status Visual Traffic Lights (সবুজ বাতি ও লাল বাতি) */}
+          <div className="bg-zinc-950/90 p-3 rounded-xl border border-zinc-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-zinc-300 flex items-center gap-1.5">
+                <span>🚦 লাইভ কী ও ভয়েস স্ট্যাটাস লাইট (Status Indicator):</span>
+              </span>
+              <span className="text-[10px] text-zinc-500 font-mono">
+                {isTesting ? "যাচাই হচ্ছে..." : testResult ? (testResult.success ? "READY ✅" : "ERROR ❌") : "WAITING"}
+              </span>
             </div>
-          )}
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              {/* Green Light (সবুজ বাতি) */}
+              <div
+                className={`p-2.5 rounded-lg border transition-all duration-300 flex items-center gap-2.5 ${
+                  testResult?.success
+                    ? "bg-emerald-950/90 border-emerald-400 text-emerald-100 shadow-[0_0_20px_rgba(16,185,129,0.45)] ring-2 ring-emerald-400"
+                    : "bg-zinc-900/40 border-zinc-800/80 text-zinc-500 opacity-30"
+                }`}
+              >
+                <div className="relative flex items-center justify-center">
+                  <div
+                    className={`w-4 h-4 rounded-full transition-all duration-300 ${
+                      testResult?.success
+                        ? "bg-emerald-400 shadow-[0_0_15px_#34d399] animate-pulse"
+                        : "bg-zinc-700"
+                    }`}
+                  />
+                </div>
+                <div className="text-[11px] leading-tight">
+                  <div className="font-bold flex items-center gap-1">
+                    <span>🟢 সবুজ বাতি</span>
+                  </div>
+                  <div className="text-[10px] text-zinc-300">কী সঠিক ও ভয়েস তৈরি হবে</div>
+                </div>
+              </div>
+
+              {/* Red Light (লাল বাতি) */}
+              <div
+                className={`p-2.5 rounded-lg border transition-all duration-300 flex items-center gap-2.5 ${
+                  testResult && !testResult.success
+                    ? "bg-red-950/90 border-red-500 text-red-100 shadow-[0_0_20px_rgba(239,68,68,0.45)] ring-2 ring-red-400"
+                    : "bg-zinc-900/40 border-zinc-800/80 text-zinc-500 opacity-30"
+                }`}
+              >
+                <div className="relative flex items-center justify-center">
+                  <div
+                    className={`w-4 h-4 rounded-full transition-all duration-300 ${
+                      testResult && !testResult.success
+                        ? "bg-red-500 shadow-[0_0_15px_#f87171] animate-ping"
+                        : "bg-zinc-700"
+                    }`}
+                  />
+                </div>
+                <div className="text-[11px] leading-tight">
+                  <div className="font-bold flex items-center gap-1">
+                    <span>🔴 লাল বাতি</span>
+                  </div>
+                  <div className="text-[10px] text-zinc-300">কী-তে সমস্যা / ভয়েস হবে না</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Live Message explanation below lights */}
+            {testResult && (
+              <div
+                className={`mt-1.5 p-2 rounded-lg text-xs flex items-center gap-2 border ${
+                  testResult.success
+                    ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-300"
+                    : "bg-red-950/60 border-red-500/40 text-red-300"
+                }`}
+              >
+                {testResult.success ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                )}
+                <span className="leading-snug">{testResult.message}</span>
+              </div>
+            )}
+          </div>
 
           <div className="p-2 rounded-lg bg-yellow-400/10 border border-yellow-400/20 text-[11px] text-yellow-200 flex items-center gap-1.5">
             <span className="font-bold text-yellow-400">💡 প্রো টিপ (Quota Bypass):</span>
             <span>একাধিক Key কমা (,) দিয়ে দিলে একটার কোটা শেষ হলে স্বয়ংক্রিয়ভাবে পরবর্তী কী দিয়ে ভয়েস তৈরি হবে!</span>
           </div>
-
-          {/* Test Result Message */}
-          {testResult && (
-            <div
-              className={`p-2.5 rounded-xl text-xs flex items-center gap-2 border ${
-                testResult.success
-                  ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-300"
-                  : "bg-red-950/60 border-red-500/40 text-red-300"
-              }`}
-            >
-              {testResult.success ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-              )}
-              <span>{testResult.message}</span>
-            </div>
-          )}
         </div>
 
         {/* Realistic Voice Notice & Key Guidance */}

@@ -18,7 +18,13 @@ let globalKeyRotationIndex = 0;
 function getAllAvailableKeys(userKey?: string): string[] {
   const keys: string[] = [];
 
-  // 1. Primary: Server environment key injected by platform
+  // 1. HIGHEST PRIORITY: User custom key provided in request / settings
+  if (userKey && typeof userKey === "string") {
+    const userKeys = userKey.split(/[,\n]/).map(k => k.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+    keys.push(...userKeys);
+  }
+
+  // 2. Server environment key injected by platform
   const envSources = [
     process.env.GEMINI_API_KEY,
     process.env.API_KEY,
@@ -31,12 +37,6 @@ function getAllAvailableKeys(userKey?: string): string[] {
       const splitKeys = envVal.split(/[,\n]/).map(k => k.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
       keys.push(...splitKeys);
     }
-  }
-
-  // 2. User custom key from settings if provided
-  if (userKey && typeof userKey === "string") {
-    const userKeys = userKey.split(/[,\n]/).map(k => k.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
-    keys.push(...userKeys);
   }
 
   // 3. Built-in Key Pool
@@ -616,6 +616,77 @@ Output ONLY the English text.`;
     console.error("Script Enhancement Error:", error);
     res.status(500).json({
       error: error?.message || "Failed to process script enhancement.",
+    });
+  }
+});
+
+// Validate Key Live with Gemini Flash TTS Engine
+app.post("/api/validate-key", async (req, res) => {
+  try {
+    const { apiKey } = req.body;
+    const cleanKey = (apiKey || "").trim().replace(/^["']|["']$/g, "");
+
+    if (!cleanKey || cleanKey.length < 10) {
+      return res.json({
+        valid: false,
+        message: "Key অত্যন্ত ছোট বা ফাঁকা। অনুগ্রহ করে একটি সঠিক Gemini Key দিন।",
+      });
+    }
+
+    // Direct test with Gemini 3.1 Flash TTS model
+    const testClient = new GoogleGenAI({
+      apiKey: cleanKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+
+    // Test a lightweight 1-word TTS generateContent call to verify 100% voice capability
+    const testResponse = await testClient.models.generateContent({
+      model: "gemini-3.1-flash-tts-preview",
+      contents: [{ parts: [{ text: "হ্যালো" }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: "Fenrir" },
+          },
+        },
+      },
+    });
+
+    const hasAudio = !!testResponse.candidates?.[0]?.content?.parts?.some((p) => p.inlineData?.data);
+
+    if (hasAudio) {
+      return res.json({
+        valid: true,
+        message: "অভিনন্দন! আপনার Key ১০০% সঠিক, সক্রিয় এবং সরাসরি ভয়েস তৈরিতে সক্ষম! (সবুজ বাতি জ্বলছে)",
+      });
+    } else {
+      return res.json({
+        valid: true,
+        message: "Key সফলভাবে কানেক্ট হয়েছে।",
+      });
+    }
+  } catch (error: any) {
+    const errMsg = error?.message || String(error);
+    let userMsg = "কী-টি দিয়ে ভয়েস তৈরি করা যায়নি।";
+    if (errMsg.includes("API key not valid") || errMsg.includes("API_KEY_INVALID") || errMsg.includes("400")) {
+      userMsg = "কী-টি সঠিক নয় বা বাতিল হয়েছে। aistudio.google.com/app/apikey থেকে নতুন কী নিন।";
+    } else if (errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED")) {
+      userMsg = "কী-টির ফ্রি কোটা আপাতত শেষ (429)। অনুগ্রহ করে কিছুক্ষণ পর চেষ্টা করুন বা নতুন কী দিন।";
+    } else if (errMsg.includes("PERMISSION_DENIED")) {
+      userMsg = "এই কী-তে Gemini TTS পারমিশন নেই। AI Studio থেকে নতুন কী তৈরি করুন।";
+    } else {
+      userMsg = `যাচাইকরণ ত্রুটি: ${errMsg.slice(0, 120)}`;
+    }
+
+    return res.json({
+      valid: false,
+      message: userMsg,
+      rawError: errMsg.slice(0, 150),
     });
   }
 });
