@@ -3,7 +3,7 @@ import path from "path";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Modality } from "@google/genai";
-import { DEFAULT_KEY_POOL } from "./src/constants/apiKeys";
+import { DEFAULT_KEY_POOL, cleanSingleKey, isValidKeyFormat } from "./src/constants/apiKeys";
 
 dotenv.config();
 
@@ -20,7 +20,7 @@ function getAllAvailableKeys(userKey?: string): string[] {
 
   // 1. HIGHEST PRIORITY: User custom key provided in request / settings
   if (userKey && typeof userKey === "string") {
-    const userKeys = userKey.split(/[,\n]/).map(k => k.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+    const userKeys = userKey.split(/[,\n]/).map(k => cleanSingleKey(k)).filter(k => isValidKeyFormat(k));
     keys.push(...userKeys);
   }
 
@@ -34,17 +34,18 @@ function getAllAvailableKeys(userKey?: string): string[] {
   ];
   for (const envVal of envSources) {
     if (envVal && typeof envVal === "string") {
-      const splitKeys = envVal.split(/[,\n]/).map(k => k.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+      const splitKeys = envVal.split(/[,\n]/).map(k => cleanSingleKey(k)).filter(k => isValidKeyFormat(k));
       keys.push(...splitKeys);
     }
   }
 
   // 3. Built-in Key Pool
   if (DEFAULT_KEY_POOL && Array.isArray(DEFAULT_KEY_POOL)) {
-    keys.push(...DEFAULT_KEY_POOL);
+    const defKeys = DEFAULT_KEY_POOL.map(k => cleanSingleKey(k)).filter(k => isValidKeyFormat(k));
+    keys.push(...defKeys);
   }
 
-  return Array.from(new Set(keys)).filter(k => typeof k === "string" && k.trim().length > 10);
+  return Array.from(new Set(keys)).filter(k => isValidKeyFormat(k));
 }
 
 function getAIClient(apiKey?: string): GoogleGenAI {
@@ -53,7 +54,7 @@ function getAIClient(apiKey?: string): GoogleGenAI {
     const keys = getAllAvailableKeys();
     keyToUse = keys[0] || process.env.GEMINI_API_KEY || "";
   }
-  const cleanKey = (keyToUse || "").trim().replace(/^["']|["']$/g, "");
+  const cleanKey = cleanSingleKey(keyToUse || "");
 
   return new GoogleGenAI({
     apiKey: cleanKey,
@@ -624,7 +625,7 @@ Output ONLY the English text.`;
 app.post("/api/validate-key", async (req, res) => {
   try {
     const { apiKey } = req.body;
-    const cleanKey = (apiKey || "").trim().replace(/^["']|["']$/g, "");
+    const cleanKey = cleanSingleKey(apiKey || "");
 
     if (!cleanKey || cleanKey.length < 10) {
       return res.json({
